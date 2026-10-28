@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fr5-infer"
+dynamic = ["version"]
+description = "Run a LeRobot policy checkpoint (Pi0.5) on the Fairino FR5"
+requires-python = ">=3.12,<3.13"
+# Dependencies (torch, lerobot 0.6, numpy, pandas, PIL, aiohttp, PyYAML) are
+# installed from requirements-lock.txt, in the image or a Python 3.12 env.
+# The fr5_teleop package is imported from the sibling checkout
+# (FR5_TELEOP_ROOT) or a `pip install -e ../fr5_teleop`.
+dependencies = []
+
+[project.optional-dependencies]
+camera = ["pyrealsense2==2.59.1.11053"]
+dev = ["pytest==8.4.1"]
+
+[project.scripts]
+fr5-infer = "fr5_infer.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["fr5_infer*"]
+
+[tool.setuptools.package-data]
+fr5_infer = ["web/*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "fr5_infer.__version__"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

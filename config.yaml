@@ -1,0 +1,59 @@
+# fr5_infer settings. Paths are relative to this file.
+#
+# Robot IP, SDK, workspace, motion limits, gripper, home pose and camera
+# serials come from the fr5_teleop config, so teleop and deployment share
+# one source of truth. Fill the camera serials there (recording.cameras).
+teleop_config: ../fr5_teleop/config.yaml
+
+# fake:   FakeRobotClient + synthetic camera frames (no hardware)
+# shadow: real robot and cameras, robot is never commanded (targets logged)
+# real:   robot moves; also needs --confirm-hardware on the command line
+mode: fake
+
+policy:
+  backend: pi05            # pi05 | replay (recorded dataset actions, no model)
+  # Step folder copied from the training PC: checkpoints/<run>/<step>/pretrained_model
+  checkpoint: checkpoints/fr5_pick_cube_pi05_expert/002500/pretrained_model
+  # Conversion record of the training dataset: fps, rotation, cameras,
+  # camera latency. Checked against the checkpoint at startup.
+  conversion: ../fr5_teleop/datasets/fr5_pick_cube_20261027/fr5_conversion.json
+  task: pick up the cube and place it in the box
+  device: cuda
+  replay:
+    dataset: ../fr5_teleop/datasets/fr5_pick_cube_20261027
+    episode: 0
+
+execution:
+  replan_steps: 20         # re-infer after 20 chunk steps (0.67 s at 30 fps)
+  refill_margin_s: 0.15    # ...or when remaining < latency EMA + margin
+  min_lead_s: 0.02
+  blend_s: 0.15
+  lookahead_s: 0.0
+  trajectory_grace_s: 0.10
+  max_points: 64
+  start_timeout_s: 15.0
+
+# Effective speed limits are min(fr5_teleop motion/orientation, these).
+# Start low on the real robot.
+safety:
+  max_start_offset_mm: 20.0
+  max_start_offset_deg: 5.0
+  max_velocity_mm_s: 100.0
+  max_angular_velocity_deg_s: 15.0
+  max_orientation_deviation_deg: 45.0   # around home.tcp orientation
+  max_episode_s: 90.0
+  max_state_age_s: 0.1
+  max_frame_age_s: 0.2
+
+gripper:
+  close_threshold: 0.6
+  open_threshold: 0.4
+  min_dwell_s: 0.5
+
+web:
+  host: 127.0.0.1
+  port: 8080
+
+log:
+  dir: runs
+  save_images: false

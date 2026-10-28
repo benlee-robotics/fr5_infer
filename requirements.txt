@@ -1,0 +1,18 @@
+# Top-level dependencies of the fr5_infer image. The image installs the
+# pinned requirements-lock.txt generated from this file:
+#   docker build --target lock --output type=local,dest=. .
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.7.1+cu128
+torchvision==0.22.1+cu128
+# torchcodec must match torch (0.5 <-> 2.7); lerobot alone would pick a newer one.
+torchcodec==0.5
+# Same lerobot as the training PC: 0.6.2 source checkout at this commit
+# (2026-10-20), with the pi05 and dataset extras. Requires Python 3.12.
+lerobot[pi,dataset] @ git+https://github.com/huggingface/lerobot.git@afbf3f14a13bdad3e5990e2bed629c6539605658
+transformers==5.5.4
+# Same versions as fr5_teleop (camera capture, web server).
+pyrealsense2==2.59.1.11053
+av==15.1.0
+numpy==2.2.6
+aiohttp==3.12.15
+PyYAML==6.0.2

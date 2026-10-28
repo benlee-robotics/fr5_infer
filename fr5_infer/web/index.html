@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FR5 Policy</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #6b7280;
+    --border: #dfe3ea; --accent: #2563eb; --ok: #15803d; --warn: #b45309; --bad: #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1b2029; --text: #e5e7eb; --muted: #9aa3b2;
+      --border: #2c3340; --accent: #60a5fa; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 12px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; }
+  h1 { font-size: 18px; margin: 0; }
+  .badge { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); font-weight: 600; }
+  .badge.real { color: var(--bad); border-color: var(--bad); }
+  .badge.shadow { color: var(--warn); border-color: var(--warn); }
+  .badge.fake { color: var(--ok); border-color: var(--ok); }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border);
+           background: var(--panel); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.stop { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 700; }
+  .task { display: flex; gap: 8px; margin-top: 10px; }
+  .task input { flex: 1; min-width: 0; font: inherit; padding: 8px; border-radius: 6px;
+                border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  h2 { font-size: 14px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+  .state { font-weight: 700; }
+  .cams { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  figure { margin: 0; }
+  figure img { width: 100%; aspect-ratio: 4 / 3; background: #000; border-radius: 6px; display: block; }
+  figcaption { color: var(--muted); margin-top: 4px; }
+  #message { min-height: 1.4em; color: var(--warn); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>FR5 Policy</h1>
+    <span id="mode" class="badge">…</span>
+    <span id="backend" class="badge">…</span>
+  </header>
+
+  <section>
+    <div class="buttons">
+      <button id="home">홈으로</button>
+      <button id="start" class="primary">정책 시작</button>
+      <button id="stop" class="stop">정지</button>
+      <button id="reset">fault 리셋</button>
+    </div>
+    <div class="task">
+      <input id="task" placeholder="지시문 (task)">
+      <button id="setTask">지시문 적용</button>
+    </div>
+    <div id="message"></div>
+  </section>
+
+  <div class="grid">
+    <section>
+      <h2>로봇</h2>
+      <dl>
+        <dt>상태</dt><dd><span id="r_state" class="state"></span> <span id="r_reason"></span></dd>
+        <dt>TCP</dt><dd id="r_tcp"></dd>
+        <dt>명령 TCP</dt><dd id="r_cmd"></dd>
+        <dt>그리퍼</dt><dd id="r_gripper"></dd>
+        <dt>servo</dt><dd id="r_servo"></dd>
+        <dt>에피소드</dt><dd id="r_episode"></dd>
+        <dt>남은 궤적</dt><dd id="r_left"></dd>
+        <dt>상태 나이</dt><dd id="r_age"></dd>
+      </dl>
+    </section>
+    <section>
+      <h2>정책</h2>
+      <dl>
+        <dt>상태</dt><dd id="p_state"></dd>
+        <dt>지시문</dt><dd id="p_task"></dd>
+        <dt>추론 횟수</dt><dd id="p_count"></dd>
+        <dt>지연</dt><dd id="p_latency"></dd>
+        <dt>보낸 점 / 버린 점</dt><dd id="p_points"></dd>
+        <dt>그리퍼 출력</dt><dd id="p_gripper"></dd>
+        <dt>마지막 종료</dt><dd id="p_end"></dd>
+        <dt>기록</dt><dd id="p_run"></dd>
+        <dt>속도 제한</dt><dd id="limits"></dd>
+      </dl>
+    </section>
+  </div>
+
+  <section>
+    <h2>카메라</h2>
+    <div class="cams" id="cams"></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (v, d = 1) => (v === null || v === undefined) ? "–" :
+  Array.isArray(v) ? v.map((x) => x.toFixed(d)).join(", ") : (typeof v === "number" ? v.toFixed(d) : String(v));
+let cameraNames = [];
+let taskEdited = false;
+
+async function post(path, body) {
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await response.json();
+    $("message").textContent = data.ok ? "" : (data.error || "요청 실패");
+  } catch (error) {
+    $("message").textContent = "서버 연결 실패: " + error;
+  }
+}
+
+$("home").onclick = () => post("/api/home");
+$("start").onclick = () => post("/api/start");
+$("stop").onclick = () => post("/api/stop");
+$("reset").onclick = () => post("/api/reset");
+$("task").oninput = () => { taskEdited = true; };
+$("setTask").onclick = async () => { await post("/api/task", { task: $("task").value }); taskEdited = false; };
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") post("/api/stop");  // Esc = 정지
+});
+
+function setupCameras(cameras) {
+  const names = Object.keys(cameras);
+  if (names.join() === cameraNames.join()) return;
+  cameraNames = names;
+  $("cams").innerHTML = names.map((name) =>
+    `<figure><img id="cam_${name}" alt="${name}"><figcaption id="cap_${name}">${name}</figcaption></figure>`
+  ).join("");
+}
+
+async function refresh() {
+  try {
+    const s = await (await fetch("/api/status")).json();
+    $("mode").textContent = s.mode;
+    $("mode").className = "badge " + s.mode;
+    $("backend").textContent = s.backend.loading ? "모델 로딩 중…" : s.backend.name;
+    const r = s.robot;
+    $("r_state").textContent = r.alive ? r.state : "프로세스 종료됨";
+    $("r_state").style.color = r.state === "FAULT" || !r.alive ? "var(--bad)" :
+      r.state === "RUNNING" ? "var(--ok)" : "";
+    $("r_reason").textContent = r.reason ? `(${r.reason})` : "";
+    $("r_tcp").textContent = fmt(r.tcp);
+    $("r_cmd").textContent = fmt(r.cmd_tcp);
+    $("r_gripper").textContent = `${fmt(r.gripper, 2)} · ${r.gripper_closed ? "닫힘" : "열림"}`;
+    $("r_servo").textContent = r.servo_active ? "on" : "off";
+    $("r_episode").textContent = r.episode_s !== undefined ? `#${r.episode} · ${fmt(r.episode_s)} s` : `#${r.episode}`;
+    $("r_left").textContent = r.trajectory_left_s !== undefined ? `${fmt(r.trajectory_left_s, 2)} s` : "–";
+    $("r_age").textContent = r.state_age_ms !== null ? `${fmt(r.state_age_ms)} ms` : "–";
+    const p = s.policy;
+    $("p_state").textContent = p.state + (p.error ? ` (${p.error})` : "");
+    if (!taskEdited && p.task !== undefined) $("task").value = p.task;
+    $("p_task").textContent = p.task || "–";
+    $("p_count").textContent = fmt(p.inferences, 0);
+    $("p_latency").textContent = p.last_latency_s !== undefined ?
+      `${fmt(p.last_latency_s * 1000, 0)} ms (EMA ${fmt((p.latency_ema_s || 0) * 1000, 0)} ms)` : "–";
+    $("p_points").textContent = p.sent_points !== undefined ? `${p.sent_points} / ${p.dropped_points}` : "–";
+    $("p_gripper").textContent = p.gripper_raw_first !== undefined ?
+      `${fmt(p.gripper_raw_first, 2)}${p.gripper_switch ? " → " + p.gripper_switch : ""}` : "–";
+    $("p_end").textContent = p.last_end_reason || "–";
+    $("p_run").textContent = p.run_dir || "–";
+    $("limits").textContent = `${fmt(s.limits.max_velocity_mm_s, 0)} mm/s · ${fmt(s.limits.max_angular_velocity_deg_s, 0)} deg/s`;
+    setupCameras(s.cameras);
+    for (const [name, c] of Object.entries(s.cameras)) {
+      const caption = $("cap_" + name);
+      if (caption) caption.textContent = `${name} · ${c.error ? "오류: " + c.error : (c.age_ms !== null ? fmt(c.age_ms, 0) + " ms" : "프레임 없음")}`;
+    }
+  } catch (error) {
+    $("r_state").textContent = "서버 연결 끊김";
+  }
+}
+
+function refreshCameras() {
+  for (const name of cameraNames) {
+    const img = $("cam_" + name);
+    if (img) img.src = `/camera/${name}.jpg?t=${Date.now()}`;
+  }
+}
+
+setInterval(refresh, 200);
+setInterval(refreshCameras, 250);
+refresh();
+</script>
+</body>
+</html>

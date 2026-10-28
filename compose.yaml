@@ -1,0 +1,53 @@
+# One session at a time; the robot moves only with --mode real --confirm-hardware.
+#   fake:     docker compose run --rm infer --mode fake --backend replay
+#   shadow:   docker compose run --rm infer --mode shadow
+#   real:     docker compose run --rm infer --mode real --confirm-hardware
+# Operator page: http://127.0.0.1:8080/ on this PC.
+# Stop the fr5_teleop container first: only one program may command the robot.
+# Expects the fr5_teleop checkout next to this one (../fr5_teleop).
+
+services:
+  infer:
+    image: ghcr.io/benlee-robotics/fr5_infer:${INFER_TAG:-latest}
+    build: .
+    # Robot TCP 20003/20005 + UDP 20007 at an 8 ms servo period: no NAT.
+    network_mode: host
+    # Reaps the robot/camera processes and forwards signals.
+    init: true
+    stop_grace_period: 15s
+    restart: "no"
+    tty: true
+    stdin_open: true
+    # Shared-memory slots (trajectory, robot state, camera frames) and torch.
+    shm_size: 1gb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # RealSense, as in fr5_teleop: host /dev bound, only V4L2 (81) and USB
+    # (189) character devices allowed; host udev rules grant UID 1000.
+    group_add: [video, plugdev]
+    device_cgroup_rules:
+      - "c 81:* rmw"
+      - "c 189:* rmw"
+    volumes:
+      - ./config.yaml:/ws/fr5_infer/config.yaml:ro
+      - ./checkpoints:/ws/fr5_infer/checkpoints:ro
+      - ./runs:/ws/fr5_infer/runs
+      # Field teleop config: robot IP, gripper, home, workspace, camera serials.
+      - ../fr5_teleop/config.yaml:/ws/fr5_teleop/config.yaml:ro
+      # Training dataset: fr5_conversion.json + meta/info.json (pi05),
+      # data/ parquet as well for --backend replay.
+      - ../fr5_teleop/datasets:/ws/fr5_teleop/datasets:ro
+      # Host time zone, so runs/<time>_<mode> names match the wall clock.
+      - /etc/localtime:/etc/localtime:ro
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
