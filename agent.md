@@ -11,8 +11,10 @@
 - **fr5_teleop과의 관계:** 별도 프로그램이지만, 로봇 클라이언트·안전 제한·관측 변환은
   fr5_teleop v0.4.1 코드를 그대로 쓴다(이미지에 포함). 로봇 IP, 그리퍼, 홈 자세,
   workspace, 카메라 serial은 **`~/fr5_teleop/config.yaml`(현장 config)** 에서 읽는다.
-- **배포 방식:** Docker 이미지 `ghcr.io/benlee-robotics/fr5_infer:0.1.0`. ghcr에는 올라가 있지
-  않으므로 USB로 받은 파일을 `docker load`한다. 컨테이너는 `compose.yaml`로 실행한다.
+- **배포 방식:**
+  - 저장소: https://github.com/benlee-robotics/fr5_infer (태그 `v0.1.0`)
+  - Docker 이미지: `ghcr.io/benlee-robotics/fr5_infer:0.1.0` (public, 로그인 불필요)
+  - 현장 PC에서는 이미지를 빌드하지 않고 pull한다. 컨테이너는 `compose.yaml`로 실행한다.
 - **현장 PC:** RTX 4090(24 GB), NVIDIA 드라이버 580 계열(작업자 기억, 3-1에서 확인).
 - **로봇:** FR5, IP `192.168.57.3`, 그리퍼 사용, 카메라 `wrist`(D435i)·`top`(D435).
 - **정책:** `fr5_pick_cube_pi05_expert`의 **2500 스텝 중간 체크포인트**(전체 10000).
@@ -62,10 +64,10 @@
 
 ### USB로 전달되는 것
 
+소스와 이미지는 인터넷으로 받는다(3-1). git에 넣지 않는 다음 두 가지만 USB로 받는다.
+
 | 파일 | 놓을 위치 | 크기 |
 |---|---|---|
-| `fr5_infer/` (소스, compose, config, scripts, 이 문서) | `~/fr5_infer/` | 작음 |
-| `fr5_infer_0.1.0.tar.gz` (이미지) | 아무 곳, `docker load` 후 삭제 가능 | ~4.4 GB |
 | `checkpoints/fr5_pick_cube_pi05_expert/002500/pretrained_model/` | `~/fr5_infer/checkpoints/...` 같은 경로 | 8.8 GB |
 | `fr5_pick_cube_20261027/` (데이터셋) | `~/fr5_teleop/datasets/fr5_pick_cube_20261027/` | 390 MB |
 
@@ -95,7 +97,7 @@
 
    비상정지는 작업자가 판단한다.
 7. 커밋과 push는 작업자가 요청할 때만 한다. 체크포인트, 데이터셋, `runs/`는 git에 넣지
-   않는다.
+   않는다. 현장 PC에서 이미지를 빌드하거나 push하지 않는다.
 
 ## 2. 실행 방식 (Claude용)
 
@@ -156,14 +158,16 @@ curl -s -XPOST 127.0.0.1:8080/api/reset                     # fault 리셋
    GPU 표가 나오면 3번으로 간다. `could not select device driver "nvidia"`가 나오면
    `README.md`의 "현장 PC 준비" 명령으로 설치한다. sudo 비밀번호는 작업자가 입력한다.
    설치 후 위 명령을 다시 실행한다.
-3. 파일 배치(0장 표)와 이미지 로드:
+3. 소스와 이미지를 받고, USB 파일(0장 표)을 배치한다.
 
    ```bash
-   docker load < /path/to/fr5_infer_0.1.0.tar.gz
-   docker image ls ghcr.io/benlee-robotics/fr5_infer        # 0.1.0
-   cd ~/fr5_infer
+   git clone https://github.com/benlee-robotics/fr5_infer.git ~/fr5_infer
+   cd ~/fr5_infer && git checkout v0.1.0
    mkdir -p runs checkpoints docs/field_reports
    echo "INFER_TAG=0.1.0" > .env
+   docker compose pull                                       # ~4.4 GB, 처음엔 오래 걸림
+   docker image ls ghcr.io/benlee-robotics/fr5_infer        # 0.1.0
+   # USB: 체크포인트 → ~/fr5_infer/checkpoints/..., 데이터셋 → ~/fr5_teleop/datasets/...
    ls checkpoints/fr5_pick_cube_pi05_expert/002500/pretrained_model/   # config.json, model.safetensors, tokenizer/ ...
    ls ~/fr5_teleop/datasets/fr5_pick_cube_20261027/                    # data meta videos fr5_conversion.json
    ```
@@ -368,7 +372,7 @@ docker compose run -d --name fr5_infer infer --mode real --confirm-hardware
 1. `~/fr5_infer/docs/field_reports/<YYYY-MM-DD>_pi05_002500.md`에 작성한다.
    - 환경: OS, 커널, Docker 버전, GPU·드라이버, nvidia-container-toolkit 버전
      (`nvidia-ctk --version`), 이미지 ID
-     (`docker image inspect ghcr.io/benlee-robotics/fr5_infer:0.1.0 -f '{{.Id}}'`)
+     (`docker image inspect ghcr.io/benlee-robotics/fr5_infer:0.1.0 -f '{{index .RepoDigests 0}}'`)
    - 3-1 ~ 3-7 항목별 표: 항목, 결과, 근거
    - 3-3 오프라인 평가 `summary`와 개발 PC 값 비교, 4090 추론 지연
    - 3-5, 3-7의 시작 오프셋 값 전체(거부·수락 모두)

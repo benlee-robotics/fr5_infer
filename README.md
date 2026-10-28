@@ -138,19 +138,35 @@ fr5_teleop 옆에 둔다.
 - 체크포인트 안에 `tokenizer/`가 있으면 그것을 쓴다. 이 경우 HuggingFace 로그인이나
   캐시가 없어도 된다.
 
-### 이미지 빌드와 전달
+### 이미지 배포 (ghcr)
+
+fr5_teleop과 같은 방식이다. `v*` 태그를 push하면 GitHub Actions(`.github/workflows/docker.yml`)가
+순서대로 처리한다.
+
+1. 태그와 `fr5_infer.__version__`이 같은지 확인
+2. 이미지 안에서 pytest 실행
+3. `ghcr.io/benlee-robotics/fr5_infer:<버전>`, `:latest`로 push
 
 ```bash
-docker compose build                       # 인터넷 필요, 처음엔 오래 걸림(이미지 ~8 GB)
-docker build --target test .               # 이미지 안에서 pytest
+# 개발 PC: fr5_infer/__init__.py의 __version__을 올리고 커밋한 뒤
+git tag v0.1.0 && git push origin main v0.1.0
 ```
 
-현장 PC에서 빌드하기 어려우면, 빌드한 PC에서 파일로 옮긴다.
+- 이미지는 공개다(로그인 불필요). 처음 push된 패키지는 GitHub에서 private로 만들어지므로,
+  패키지 설정(Package settings → Change visibility)에서 한 번 public으로 바꾼다.
+- 현장 PC에서는 빌드하지 않고 받기만 한다.
 
-```bash
-docker save ghcr.io/benlee-robotics/fr5_infer:latest | gzip > fr5_infer.tar.gz   # 빌드한 PC
-docker load < fr5_infer.tar.gz                                                    # 현장 PC
-```
+  ```bash
+  echo "INFER_TAG=0.1.0" > .env
+  docker compose pull
+  ```
+
+- 로컬에서 직접 빌드하거나 테스트하려면 다음을 쓴다.
+
+  ```bash
+  docker compose build                       # 인터넷 필요, 처음엔 오래 걸림(이미지 ~12.5 GB)
+  docker build --target test .               # 이미지 안에서 pytest
+  ```
 
 ### 실행
 

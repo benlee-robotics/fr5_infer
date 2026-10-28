@@ -92,6 +92,7 @@ ENV HF_HUB_OFFLINE=1 \
 
 USER infer
 
-LABEL org.opencontainers.image.description="Run a LeRobot policy checkpoint (Pi0.5) on the Fairino FR5"
+LABEL org.opencontainers.image.source="https://github.com/benlee-robotics/fr5_infer" \
+      org.opencontainers.image.description="Run a LeRobot policy checkpoint (Pi0.5) on the Fairino FR5"
 
 ENTRYPOINT ["python", "-m", "fr5_infer"]
