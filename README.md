@@ -306,7 +306,7 @@ python -m fr5_infer --mode real   --backend pi05   --confirm-hardware
 | `execution.lookahead_s` | 서보 지연 보상. 궤적을 이만큼 앞에서 샘플링한다 |
 | `safety.max_orientation_deviation_deg` | 홈 자세 기준 절대 자세 범위 |
 | `safety.max_episode_s` | 에피소드 최대 시간 |
-| `gripper.*` | 히스테리시스(닫힘 > 0.6, 열림 < 0.4)와 최소 유지 시간 |
+| `gripper.*` | 히스테리시스(닫힘 > 0.6, 열림 < 0.4)와 최소 유지 시간. `settle_s`, `max_settle_s`: 그리퍼 완료 뒤 측정 위치가 `settle_s` 동안 그대로일 때(최대 `max_settle_s`) 서보를 다시 시작한다. 움직이는 동안 측정 위치는 0으로 읽히고 완료 0.1~0.3 s 뒤에 최종값이 된다 |
 
 ## 기록 (`runs/<시각>_<모드>/`)
 
@@ -337,7 +337,7 @@ python -m pytest -q
 - 로봇 루프 (FakeRobotClient)
   - 시작 거리 거부, 시작 전에 쓰인 궤적 무시
   - 궤적 소진 시 정지, 속도 제한
-  - 그리퍼 정지 → 재개, shadow 무명령, 정지 명령
+  - 그리퍼 정지 → 재개, 완료 뒤 위치 안정 대기와 상한, shadow 무명령, 정지 명령
 
 ## 한계
 

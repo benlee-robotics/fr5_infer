@@ -59,6 +59,8 @@ gripper:
   close_threshold: 0.6
   open_threshold: 0.4
   min_dwell_s: 0.5
+  settle_s: 0.15           # after "done", wait for a stable measured position
+  max_settle_s: 0.5
 
 web:
   host: 127.0.0.1

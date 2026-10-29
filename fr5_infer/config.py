@@ -100,6 +100,10 @@ class GripperPolicyConfig:
     close_threshold: float = 0.6
     open_threshold: float = 0.4
     min_dwell_s: float = 0.5
+    # After the gripper reports done, wait until the measured position has
+    # not changed for settle_s (at most max_settle_s) before restarting.
+    settle_s: float = 0.15
+    max_settle_s: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -191,6 +195,8 @@ class InferConfig:
         gripper = self.gripper
         if not 0 <= gripper.open_threshold < gripper.close_threshold <= 1:
             raise ValueError("gripper thresholds need 0 <= open < close <= 1")
+        if not 0 <= gripper.settle_s <= gripper.max_settle_s:
+            raise ValueError("gripper needs 0 <= settle_s <= max_settle_s")
         if not self.cameras:
             raise ValueError("the teleop config lists no recording.cameras")
 

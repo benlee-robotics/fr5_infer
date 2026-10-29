@@ -186,3 +186,43 @@ def test_stop_command_ends_the_servo(config):
     assert runtime.state == "IDLE"
     assert runtime.reason == "stopped_by_operator"
     assert not runtime.client.servo_active
+
+
+def start_gripper_action(runtime):
+    start(runtime)
+    now = time.monotonic_ns()
+    runtime.mailbox.write(
+        trajectory_from(runtime.measured_tcp, duration_s=0.1, t0_ns=now), now, True, now + 50_000_000
+    )
+    assert run_ticks(runtime, 0.3, until=lambda r: r.state == "GRIPPER")
+    # Fake gripper motion is 0.5 s; then the done status arrives.
+    assert run_ticks(runtime, 1.0, until=lambda r: r.gripper_settling is not None)
+
+
+def test_gripper_waits_for_the_measured_position_to_settle(config):
+    runtime = make_runtime(config)
+    start_gripper_action(runtime)
+    # The measured position still creeps towards its final value after done.
+    for position in (47, 52, 56):
+        runtime.client.gripper_position = position
+        run_ticks(runtime, 0.06)
+        assert runtime.state == "GRIPPER"
+    runtime.client.gripper_position = 59
+    settled_from = time.monotonic()
+    assert run_ticks(runtime, 0.5, until=lambda r: r.state == "STARTING")
+    assert time.monotonic() - settled_from >= config.gripper.settle_s - TICK_S
+    assert runtime.gripper_position == 59
+
+
+def test_gripper_settling_is_bounded(config):
+    runtime = make_runtime(config)
+    start_gripper_action(runtime)
+    done = time.monotonic()
+    position = 0
+    while runtime.state == "GRIPPER" and time.monotonic() - done < 2.0:
+        position = (position + 1) % 100  # never stable
+        runtime.client.gripper_position = position
+        runtime.tick(time.monotonic_ns())
+        time.sleep(TICK_S)
+    assert runtime.state == "STARTING"
+    assert time.monotonic() - done < config.gripper.max_settle_s + 0.1

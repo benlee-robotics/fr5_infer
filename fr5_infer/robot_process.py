@@ -132,6 +132,8 @@ class RobotRuntime:
         self.gripper_target: bool | None = None
         self.gripper_deadline_ns = 0
         self.next_gripper_poll_ns = 0
+        # Set once the gripper reports done: (done_ns, position, stable_since_ns).
+        self.gripper_settling: tuple[int, float, int] | None = None
 
         self.run_dir: Path | None = None
         self.ticks: list[tuple[Any, ...]] = []
@@ -370,8 +372,12 @@ class RobotRuntime:
         done_ns = time.monotonic_ns()
         self.gripper_deadline_ns = done_ns + int(gripper.action_timeout_s * 1e9)
         self.next_gripper_poll_ns = done_ns
+        self.gripper_settling = None
 
     def _tick_gripper(self, now_ns: int) -> None:
+        if self.gripper_settling is not None:
+            self._tick_gripper_settling(now_ns)
+            return
         if now_ns >= self.gripper_deadline_ns:
             self._fault(now_ns, "gripper_timeout", RuntimeError("gripper did not finish"))
             return
@@ -382,6 +388,24 @@ class RobotRuntime:
         if motion.fault != 0:
             self._fault(now_ns, "gripper_fault", RuntimeError(f"gripper fault={motion.fault}"))
         elif motion.done:
+            self.gripper_settling = (now_ns, self.gripper_position, now_ns)
+
+    def _tick_gripper_settling(self, now_ns: int) -> None:
+        """Wait for the measured position to settle before the next observation.
+
+        The CNDE gripper_position reads 0 while the gripper moves and reaches
+        its final value only 0.1-0.3 s after the done status (field FR5 +
+        Robotiq), so the policy would otherwise see a half-way gripper.
+        """
+        assert self.gripper_settling is not None
+        done_ns, position, stable_since_ns = self.gripper_settling
+        if self.gripper_position != position:
+            self.gripper_settling = (done_ns, self.gripper_position, now_ns)
+            stable_since_ns = now_ns
+        gripper = self.config.gripper
+        stable = now_ns - stable_since_ns >= gripper.settle_s * 1e9
+        if stable or now_ns - done_ns >= gripper.max_settle_s * 1e9:
+            self.gripper_settling = None
             self._finish_gripper(now_ns)
 
     def _finish_gripper(self, now_ns: int) -> None:
