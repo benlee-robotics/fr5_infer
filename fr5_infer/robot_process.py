@@ -363,7 +363,9 @@ class RobotRuntime:
             self._finish_gripper(time.monotonic_ns())
             return
         gripper = self.teleop.gripper
-        # block=1: returns once the motion finished or command_max_time_ms passed.
+        # Non-blocking (SDK block=1); _tick_gripper polls GetGripperMotionDone.
+        # Restarting the servo before the gripper really finishes blocks
+        # ServoMoveStart for the rest of the motion (~1.1 s).
         self.client.move_gripper(gripper.closed_position if closed else gripper.open_position)
         done_ns = time.monotonic_ns()
         self.gripper_deadline_ns = done_ns + int(gripper.action_timeout_s * 1e9)
