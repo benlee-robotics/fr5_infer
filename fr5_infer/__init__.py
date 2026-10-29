@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 TELEOP_ROOT = Path(
     os.environ.get(

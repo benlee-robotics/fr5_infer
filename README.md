@@ -142,7 +142,7 @@ python scripts/eval_chunk_continuity.py \
 
 - `requirements-lock.txt`로 고정한 의존성: Python 3.12, torch 2.7.1+cu128,
   lerobot 0.6.2(학습 PC와 같은 커밋), transformers 5.5.4, pyrealsense2
-- fr5_teleop 이미지(`TELEOP_IMAGE`, 기본 `0.4.2`)에서 복사한 `teleop` 패키지, `web/`, Fairino SDK
+- fr5_teleop 이미지(`TELEOP_IMAGE`, 기본 `0.4.3`)에서 복사한 `teleop` 패키지, `web/`, Fairino SDK
 
 안전 제한 코드는 현장 텔레옵 이미지와 같은 버전이다. 체크포인트는 이미지에 넣지 않고
 마운트한다.
@@ -189,7 +189,7 @@ fr5_teleop과 같은 방식이다. `v*` 태그를 push하면 GitHub Actions(`.gi
 
 ```bash
 # 개발 PC: fr5_infer/__init__.py의 __version__을 올리고 커밋한 뒤
-git tag v0.1.1 && git push origin main v0.1.1
+git tag v0.1.2 && git push origin main v0.1.2
 ```
 
 - 이미지는 공개다(로그인 불필요). 처음 push된 패키지는 GitHub에서 private로 만들어지므로,
@@ -197,7 +197,7 @@ git tag v0.1.1 && git push origin main v0.1.1
 - 현장 PC에서는 빌드하지 않고 받기만 한다.
 
   ```bash
-  echo "INFER_TAG=0.1.1" > .env
+  echo "INFER_TAG=0.1.2" > .env
   docker compose pull
   ```
 

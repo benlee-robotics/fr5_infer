@@ -15,7 +15,7 @@
 # torch cu128 wheels carry the CUDA runtime; the host needs only the NVIDIA
 # driver and nvidia-container-toolkit.
 
-ARG TELEOP_IMAGE=ghcr.io/benlee-robotics/fr5_teleop:0.4.2
+ARG TELEOP_IMAGE=ghcr.io/benlee-robotics/fr5_teleop:0.4.3
 
 FROM ${TELEOP_IMAGE} AS teleop
 

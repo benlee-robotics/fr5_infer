@@ -1,4 +1,4 @@
-# 현장 검증 작업 지시서 (fr5_infer 0.1.1, Pi0.5 체크포인트 005000)
+# 현장 검증 작업 지시서 (fr5_infer 0.1.2, Pi0.5 체크포인트 005000)
 
 이 문서는 현장 PC에서 작업하는 Claude에게 주는 지시서다. 작업자(사람)와 함께
 아래 순서대로 검증하고, 결과를 보고서로 남긴다. 작업자와는 한국어로 대화한다.
@@ -8,16 +8,17 @@
 - **프로젝트:** fr5_infer는 텔레옵 시연으로 학습한 LeRobot Pi0.5 정책을 FR5 실기에서
   실행한다. 조작은 웹 페이지(`http://127.0.0.1:8080/`)에서 한다. 구조와 설정은
   `README.md`를 본다.
-- **fr5_teleop과의 관계:** 로봇 클라이언트·안전 제한·관측 변환은 fr5_teleop **v0.4.2** 코드를
+- **fr5_teleop과의 관계:** 로봇 클라이언트·안전 제한·관측 변환은 fr5_teleop **v0.4.3** 코드를
   그대로 쓴다(이미지에 포함). 로봇 IP, 그리퍼, 홈 자세, workspace, 카메라 serial은
-  **`~/fr_ws/fr5_teleop/config.yaml`(현장 config)** 에서 읽는다. fr5_teleop 저장소는 이번에
-  갱신하지 않는다(fr5_infer는 그 config와 데이터셋만 마운트한다).
+  **`~/fr_ws/fr5_teleop/config.yaml`(현장 config)** 에서 읽는다. fr5_infer는 그 config와 데이터셋만
+  마운트한다. 현장 fr5_teleop 저장소(v0.4.2)도 3-1에서 v0.4.3으로 올린다. 0.4.2로 텔레옵을 띄우면
+  텔레옵에서도 그리퍼 동작마다 `gripper_timeout`이 나기 때문이다.
 - **배포 방식:**
-  - 저장소: https://github.com/benlee-robotics/fr5_infer. `main` = 태그 `v0.1.1` + 이 지시서와
-    현장 스크립트 2개(`scripts/gripper_check.py`, `scripts/analyze_run.py`). 코드는 v0.1.1과 같다.
-  - Docker 이미지: `ghcr.io/benlee-robotics/fr5_infer:0.1.1`
-    (`sha256:1488841d827360c6a0c40dc98f1807004917116a0dc02d10a1e42cefdffd5367`, public)
-  - 현장 스크립트 2개는 이미지에 없다. 실행할 때 `scripts/`를 마운트한다(2장).
+  - 저장소: https://github.com/benlee-robotics/fr5_infer, 태그 `v0.1.2`(`main`).
+  - Docker 이미지: `ghcr.io/benlee-robotics/fr5_infer:0.1.2`
+    (digest는 3-1에서 기록, public)
+  - 현장 스크립트(`scripts/gripper_check.py`, `scripts/analyze_run.py`)는 저장소 것을 쓰도록
+    실행할 때 `scripts/`를 마운트한다(2장).
 - **현장 PC:** 2026-10-29 검증과 같다. RTX 4090, 드라이버 595.99.02, nvidia-container-toolkit
   설치됨. 저장소 위치는 `~/fr_ws/fr5_infer`, `~/fr_ws/fr5_teleop`.
 - **로봇:** FR5, IP `192.168.57.3`, 그리퍼 사용, 카메라 `wrist`·`top`(D435).
@@ -26,19 +27,33 @@
   - 데이터셋 `fr5_pick_cube_20261027`, 지시문 `pick up the cube and place it in the box`
   - 30 Hz, 50스텝(1.67 s) 청크
 
-### v0.1.0 → v0.1.1에서 바뀐 것
+### 지난 두 번의 현장과 이번에 바뀐 것
+
+| 버전 | 그리퍼 완료 판정 | 결과 |
+|---|---|---|
+| v0.1.0 (teleop 0.4.1) | 결과를 무시하고 항상 완료 | 명령 약 20 ms 뒤 "완료". 그 뒤 서보 재시작(`ServoMoveStart`)이 실제 동작이 끝날 때까지 1.1~1.6 s 막혔다. 10-29 회 1·회 3의 `trajectory_exhausted` 원인 |
+| v0.1.1 (teleop 0.4.2) | SDK 문서대로 `status == 1`만 완료 | 이 그리퍼는 `[1, status]`를 돌려주고, status가 0 움직임 / 2 물체 잡고 멈춤 / 3 목표 도착이다. 모든 동작이 5 s 뒤 `gripper_timeout`. 3-2에서 발견해 실기 전에 멈췄다 |
+| **v0.1.2 (teleop 0.4.3)** | **status가 0이 아니면 완료**, fault는 CNDE `gripper_fault` | 현장 값(`[1, 0]` → `[1, 3]` 또는 `[1, 2]`)으로 개발 PC에서 재현 시험함. 실기 확인은 이번이 처음 |
+
+v0.1.2에서 함께 바뀐 것:
 
 | 항목 | 내용 |
 |---|---|
-| **그리퍼 완료 판정 (fr5_teleop 0.4.2)** | 0.4.1은 그리퍼 명령 약 20 ms 뒤 "완료"로 보고했다(실제 동작은 약 1.1 s). 그래서 그리퍼 뒤 서보 재시작(`ServoMoveStart`)이 1.1~1.6 s 막혔고, 10-29 회 1·회 3의 `trajectory_exhausted` 원인이 됐다. 그리퍼 직후 관측의 gripper 값도 항상 0.0(열림)이었다. 이제 `GetGripperMotionDone`의 status가 1일 때만 완료로 본다 |
+| **완료 뒤 위치 안정 대기** (`gripper.settle_s` 0.15, `max_settle_s` 0.5) | CNDE `gripper_position`은 움직이는 동안 0이고, 완료 0.1~0.3 s 뒤에 최종값이 된다. 완료 뒤 측정 위치가 0.15 s 동안 그대로일 때(최대 0.5 s) 서보를 다시 시작한다. 그래서 정책은 그리퍼 직후 관측에서 최종 위치를 본다 |
+| `gripper_check.py` | 판정 옆에 `GetGripperMotionDone` 원래 값과 CNDE 그리퍼 필드, 위치가 멈춘 시각을 함께 출력한다 |
+
+v0.1.1에서 추가된 것(그대로, 기본 꺼짐):
+
+| 항목 | 내용 |
+|---|---|
 | **RTC** (`policy.rtc.enabled`, 기본 꺼짐) | lerobot의 추론 시점 guided Real-Time Chunking. 새 청크가 이전 청크 중 아직 실행하지 않은 부분을 이어 가도록 유도한다. 재학습이 필요 없다. 지연이 약 30 ms 늘어난다 |
 | **시간 앙상블** (`execution.ensemble`, 기본 꺼짐) | ACT 방식. 시각마다 그 시각을 예측한 청크들의 가중 평균을 낸다. 그리퍼 출력도 평균한다 |
 | 기록 | `inferences.npz`에 `rtc_prefix_steps`, `rtc_delay_steps` 추가 |
 
 ### 이번 검증의 목적
 
-1. **그리퍼 수정 확인:** 완료가 실제 동작 끝에 맞춰 보고되는지, 특히 큐브를 쥐고 멈췄을 때도
-   완료가 되는지(안 되면 5 s 뒤 `gripper_timeout` FAULT).
+1. **그리퍼 수정 확인:** 빈손(status 3)과 큐브를 잡았을 때(status 2) 모두 완료가 실제 동작
+   끝에 맞춰 보고되는지, fault가 0인지, 완료 뒤 위치가 최종값으로 안정되는지.
 2. **기준선(RTC·앙상블 끔):** 그리퍼 수정만으로 10-29의 `trajectory_exhausted`, 그리퍼 뒤 멈춤이
    사라졌는지, 100 mm/s jerking이 남는지.
 3. **RTC:** 같은 조건에서 RTC만 켰을 때 jerking과 청크 이음매가 줄어드는지, 성공률이 유지되는지.
@@ -58,6 +73,13 @@
 | 추론 지연 p50 | 120~136 ms |
 | 작업자 체감 | 75 mm/s가 가장 부드러움, 100 mm/s "엄청 jerking" |
 
+2026-10-29 v0.1.1 점검(`docs/field_reports/2026-10-29_pi05_005000_v0.1.1.md`):
+
+| 항목 | 값 |
+|---|---|
+| 그리퍼 SDK 직접 진단 | 빈손 열기·닫기 `[1, 0]` → `[1, 3]` 1.78·1.82 s, 큐브 잡기 `[1, 2]` 1.28 s(위치 47 → 59), 놓기 1.32 s. CNDE `gripper_fault` 항상 0 |
+| shadow RTC (4090) | 지연 p50 135.5 → 169.4 ms, 이음매 튐 p50 49.3 → 9.5 mm, guided 15/16 |
+
 개발 PC 오프라인(002500, 녹화 에피소드 0/40/80 순차 재생, RTX 5080, `scripts/eval_chunk_continuity.py`):
 
 | 방식 | 이음매 튐 p50 / max | 위치 오차 | 지연 p50 |
@@ -72,8 +94,8 @@
 - 모델 로드 때 `Vision embedding key might need handling: ...patch_embedding...` 경고 2줄.
   `All keys loaded successfully!`가 나오면 정상이다.
 - 그리퍼가 움직일 때 서보가 멈췄다 다시 시작하는 것은 설계다(`GRIPPER` → `STARTING` →
-  `RUNNING`). **v0.1.1에서는 `GRIPPER` 상태가 약 1 s 이어진다.** 10-29에는 20~30 ms였고,
-  이번에 길어진 것이 정상이다.
+  `RUNNING`). **v0.1.2에서는 `GRIPPER` 상태가 약 1.4~2.3 s 이어진다**(동작 1.3~1.8 s +
+  위치 안정 대기 0.15~0.5 s). 10-29 v0.1.0에서는 20~30 ms였고, 이번에 길어진 것이 정상이다.
 - 놓은 뒤 정책이 멈추지 않고 홈 근처를 배회한다(종료 판단 없음). 이번 검증 대상이 아니다.
 - 시작 오프셋 거부(`start_offset_XXmm_YYdeg`)가 가끔 난다. 한도는 10-29처럼 40 mm / 10°로 둔다.
 - 궤적이 끝나면 서보를 멈춘다(`trajectory_exhausted`). 실행 **끝**에 나는 것은 설계다. 그리퍼
@@ -152,39 +174,62 @@ curl -s -XPOST 127.0.0.1:8080/api/reset                     # fault 리셋
    ```bash
    cd ~/fr_ws/fr5_infer
    docker ps -a                                   # fr5, fr5_infer 없음
-   cp config.yaml ~/config_infer_before_v0.1.1.yaml
-   git diff config.yaml > ~/config_infer_before_v0.1.1.diff
+   git status --short                             # 바뀐 파일 기록
+   cp config.yaml ~/config_infer_before_v0.1.2.yaml
+   git diff config.yaml > ~/config_infer_before_v0.1.2.diff
    git checkout -- config.yaml
-   # 10-29 보고서는 이제 저장소에 들어 있다. 미추적 파일이 checkout을 막으므로 옮겨 둔다.
-   mv docs/field_reports/2026-10-29_pi05_005000.md ~/2026-10-29_pi05_005000.local.md
+   # v0.1.1 점검 보고서는 이제 저장소에 들어 있다. 미추적 파일이 checkout을 막으므로 옮겨 둔다.
+   mv docs/field_reports/2026-10-29_pi05_005000_v0.1.1.md ~/2026-10-29_pi05_005000_v0.1.1.local.md
    git fetch --tags origin && git checkout main && git pull --ff-only
-   git describe --tags                            # v0.1.1-1-g...
-   echo "INFER_TAG=0.1.1" > .env
+   git describe --tags                            # v0.1.2
+   echo "INFER_TAG=0.1.2" > .env
    docker compose pull
-   docker image inspect ghcr.io/benlee-robotics/fr5_infer:0.1.1 -f '{{index .RepoDigests 0}}'
+   docker image inspect ghcr.io/benlee-robotics/fr5_infer:0.1.2 -f '{{index .RepoDigests 0}}'
    ```
 
-   digest가 0장의 값과 같은지 기록한다. `diff ~/2026-10-29_pi05_005000.local.md
-   docs/field_reports/2026-10-29_pi05_005000.md`가 비어 있는지 확인한다.
-2. 새 `config.yaml`에 현장 값을 넣는다. 보관한 diff와 비교해 작업자에게 확인받는다.
-   - `policy.checkpoint: checkpoints/fr5_pick_cube_pi05_expert/005000/pretrained_model` (v0.1.1 기본값, 확인만)
+   digest를 기록한다. `diff ~/2026-10-29_pi05_005000_v0.1.1.local.md
+   docs/field_reports/2026-10-29_pi05_005000_v0.1.1.md`가 비어 있는지 확인한다. 차이가 있으면
+   작업자에게 알리고 로컬 파일을 보관한다.
+2. 현장 fr5_teleop 저장소를 v0.4.3으로 올린다. 현장 `config.yaml` 수정은 유지한다
+   (0.4.2 → 0.4.3에서 config 키는 바뀌지 않았다).
+
+   ```bash
+   cd ~/fr_ws/fr5_teleop
+   git status --short                             # config.yaml 외 변경이 있으면 작업자에게 확인
+   cp config.yaml ~/config_teleop_field_v0.4.2.yaml
+   git checkout -- config.yaml
+   git fetch --tags origin && git checkout v0.4.3
+   cp ~/config_teleop_field_v0.4.2.yaml config.yaml
+   git diff --stat                                # config.yaml만 바뀜
+   cat .env 2>/dev/null                           # 다른 값이 있으면 유지한다
+   grep -q '^TELEOP_TAG=' .env 2>/dev/null && sed -i 's/^TELEOP_TAG=.*/TELEOP_TAG=0.4.3/' .env \
+     || echo "TELEOP_TAG=0.4.3" >> .env
+   cd ~/fr_ws/fr5_infer
+   ```
+
+   텔레옵 이미지 pull과 실행은 이번 검증에 필요 없다. 작업자가 나중에 텔레옵을 쓸 때
+   `docker compose pull`한다.
+3. 새 `config.yaml`에 현장 값을 넣는다. 보관한 diff와 비교해 작업자에게 확인받는다.
+   - `policy.checkpoint: checkpoints/fr5_pick_cube_pi05_expert/005000/pretrained_model` (기본값, 확인만)
    - `safety.max_velocity_mm_s: 75.0`
    - `safety.max_start_offset_mm: 40.0`, `safety.max_start_offset_deg: 10.0`
    - `log.save_images: true`
    - `policy.rtc.enabled: false`, `execution.ensemble: false` (기본값 그대로, 확인만)
-3. 버전과 설정을 확인한다.
+   - `gripper.settle_s: 0.15`, `gripper.max_settle_s: 0.5` (새 키, 기본값 그대로, 확인만)
+4. 버전과 설정을 확인한다.
 
    ```bash
    docker compose run --rm -T --entrypoint python infer -c "
    import fr5_infer, teleop, inspect, teleop.robot.fairino_client as m
    from pathlib import Path; from fr5_infer.config import InferConfig
    c = InferConfig.from_yaml(Path('config.yaml'), overrides={'mode': 'real'})
-   print(fr5_infer.__version__, teleop.__version__, 'status' in inspect.getsource(m.FairinoRobotClient.get_gripper_motion_state))
+   print(fr5_infer.__version__, teleop.__version__, '_gripper_fault' in inspect.getsource(m.FairinoRobotClient.get_gripper_motion_state))
    print(c.policy.checkpoint.parent.name, c.max_velocity_mm_s, c.safety.max_start_offset_mm, c.log.save_images, c.policy.rtc.enabled, c.execution.ensemble)
-   g = c.teleop.gripper; print('gripper', g.enabled, g.open_position, g.closed_position, g.velocity, g.force, g.action_timeout_s, g.poll_period_s)"
+   g = c.teleop.gripper; print('gripper', g.enabled, g.open_position, g.closed_position, g.velocity, g.force, g.action_timeout_s, g.poll_period_s, c.gripper.settle_s, c.gripper.max_settle_s)"
    ```
 
-   기대: `0.1.1 0.4.2 True`, `005000 75.0 40.0 True False False`. 그리퍼 줄은 그대로 기록한다.
+   기대: `0.1.2 0.4.3 True`, `005000 75.0 40.0 True False False`, 그리퍼 줄 끝이 `0.15 0.5`.
+   그리퍼 줄은 그대로 기록한다.
 
 ### 3-2. 그리퍼 단독 점검 (그리퍼만 움직임, 규칙 1·2·3)
 
@@ -194,9 +239,9 @@ curl -s -XPOST 127.0.0.1:8080/api/reset                     # fault 리셋
 
 | # | 항목 | 방법 | 기대 |
 |---|---|---|---|
-| G1 | 빈손 닫기·열기 | `close`, `open`을 번갈아 3번씩 | `MoveGripper call returned` 100 ms 미만, `first poll ... done=False`, `done after` 약 0.5~1.5 s, 닫힘 위치 약 89, 열림 약 0~1 |
+| G1 | 빈손 닫기·열기 | `close`, `open`을 번갈아 3번씩 | `MoveGripper call returned` 100 ms 미만, `first poll ... done=False`, raw `[1, 0]` → `[1, 3]`, `done after` 약 1.8 s, `fault=0`, 닫힘 위치 약 89, 열림 약 0~1, `unchanged since`가 `done after`보다 0.3 s 이내 뒤 |
 | G2 | 완료 시점 | 작업자에게 G1 중 1회를 보며 "그리퍼가 멈춘 순간"과 출력의 `done after`가 비슷한지 묻는다 | 완료가 그리퍼 멈춤보다 크게 빠르지 않음 |
-| G3 | 큐브 쥐기 | 작업자가 **펜던트로** TCP를 내려 테이블 위 큐브가 손가락 사이에 오게 한다(손으로 들고 있지 않는다). `close` → `open`, 2회 | 쥐고 멈춰도 `done after`가 나옴(`NOT DONE` 아님), 위치 약 59~60, `fault=0` |
+| G3 | 큐브 쥐기 | 작업자가 **펜던트로** TCP를 내려 테이블 위 큐브가 손가락 사이에 오게 한다(손으로 들고 있지 않는다). `close` → `open`, 2회 | 닫기: raw `[1, 2]`, `done after` 약 1.3 s, 위치 약 59~60, `fault=0`. 열기: `[1, 3]`, 위치 약 0~1 |
 | G4 | 원위치 | 작업자가 펜던트로 TCP를 큐브 위로 올린다. 홈 복귀는 3-4 시작 때 웹으로 한다 | – |
 
 명령(한 번에 하나, 출력 전체를 보고서에 붙인다):
@@ -209,24 +254,18 @@ docker compose run --rm -T -v "$PWD/scripts:/ws/fr5_infer/scripts:ro" --entrypoi
 
 판정:
 
-- **G3에서 `NOT DONE`**: 큐브를 쥐면 status가 1이 되지 않는 것이다. 정책은 잡는 순간
-  `gripper_timeout`으로 FAULT가 난다. **3-4 이후 실기를 보류하고** 5장으로 간다.
+- **`NOT DONE`이 한 번이라도 나오면** 정책은 그 동작에서 `gripper_timeout`으로 FAULT가 난다.
+  raw 값과 함께 기록하고 **3-4 이후 실기를 보류한 뒤** 5장으로 간다.
 - **첫 poll이 `done=True`이거나 `done after`가 0.1 s 미만**: 이전 동작의 완료가 남아 있는 것이다.
-  0.4.1과 같은 문제가 남는다. 출력을 기록하고, 3-4 기준선은 진행하되 보고서에 표시한다.
-- `fault=1`이면 즉시 멈추고 작업자에게 그리퍼 상태를 확인받는다.
+  v0.1.0과 같은 문제가 남는다. 출력을 기록하고, 3-4 기준선은 진행하되 보고서에 표시한다.
+- **`fault`가 0이 아니면** 즉시 멈추고 작업자에게 그리퍼 상태를 확인받는다. CNDE `gripper_fault`
+  값의 뜻: 1 485 통신 시간 초과, 2 명령 오류, 3 물체 떨어짐, 그 밖 그리퍼 오류 코드.
+- `unchanged since`가 `done after`보다 0.5 s 넘게 늦으면 기록한다(안정 대기 상한 0.5 s를
+  넘는다는 뜻이다. 실기는 진행한다).
 
-### 3-3. shadow: 4090에서 RTC 지연 (로봇 동작 없음)
+### 3-3. shadow RTC 지연 (이번에는 하지 않는다)
 
-로봇을 홈에 두고(펜던트) 큐브를 시연 위치에 놓는다. 조건마다 컨테이너를 새로 띄운다.
-
-| # | 조건 | 방법 | 기록 |
-|---|---|---|---|
-| H1 | RTC 끔 | `--mode shadow`, **정책 시작**, 10초 뒤 **정지** | `analyze_run.py`의 `latency`, `switch jump` |
-| H2 | RTC 켬 | `config.yaml`의 `policy.rtc.enabled: true`로 바꾸고 다시 띄워 H1과 같게 | 위와 같음 + `rtc guided`, `/api/status`의 `backend.rtc_warmup_s`, `gpu_memory_gb` |
-
-기대: H2 `rtc guided`가 첫 추론을 뺀 전부(`n-1/n`), `latency` p50이 H1보다 약 30 ms 큼,
-300 ms 미만. shadow는 매 추론이 홈에서 다시 계획되므로 `switch jump`는 참고값이다.
-H2 뒤에는 `policy.rtc.enabled: false`로 되돌린다.
+v0.1.1 점검에서 마쳤다(0장 비교 기준). 이번 변경은 그리퍼 쪽뿐이라 다시 하지 않는다.
 
 ### 3-4 ~ 3-6. 실기 정책 실행 (규칙 1, 2)
 
@@ -259,8 +298,9 @@ H2 뒤에는 `policy.rtc.enabled: false`로 되돌린다.
 
 `analyze_run.py`의 `gripper actions` 줄에서 값을 옮긴다.
 - 그리퍼 뒤 첫 RUNNING tick: 1.1 s(10-29)였던 값이 수십 ms로 줄었는지 본다.
-- 그리퍼 직후 obs gripper: 닫은 뒤 약 0.6, 연 뒤 약 0.0이면 정상이다.
-- `GRIPPER` 시간: 약 1 s가 정상이다.
+- 그리퍼 직후 obs gripper: 큐브를 잡은 뒤 약 0.59, 연 뒤 약 0.0~0.01이면 정상이다.
+  10-29 v0.1.0에서는 잡은 뒤에도 0.00이었다.
+- `GRIPPER` 시간: 약 1.4~2.3 s가 정상이다.
 
 #### 3-4. 조건 A: RTC·앙상블 끔 (기준선)
 
@@ -296,7 +336,7 @@ docker compose run -d --name fr5_infer infer --mode real --confirm-hardware
 
 | 증상 | 확인 순서 |
 |---|---|
-| `config: unknown keys ...` 또는 `policy.rtc: unknown keys` | 이미지가 0.1.0이다. `.env`의 `INFER_TAG=0.1.1`, `docker compose pull` |
+| `config: unknown keys ...` 또는 `policy.rtc: unknown keys` | 이미지가 옛 버전이다. `.env`의 `INFER_TAG=0.1.2`, `docker compose pull` |
 | `policy.rtc needs the pi05 backend` | `--backend replay`와 RTC를 같이 켰다. replay는 이번에 쓰지 않는다 |
 | `gripper_timeout` (FAULT) | 3-2 G3에서 `NOT DONE`이 났는지. 웹 **fault 리셋** → 홈으로. `docker logs fr5_infer` 원문 기록 |
 | `gripper_fault` (FAULT) | 그리퍼 전원·통신. 작업자 확인, 로그 원문 기록 |
@@ -309,12 +349,11 @@ docker compose run -d --name fr5_infer infer --mode real --confirm-hardware
 
 ## 5. 보고서와 전달
 
-1. `~/fr_ws/fr5_infer/docs/field_reports/<YYYY-MM-DD>_pi05_005000_v0.1.1.md`에 작성한다.
+1. `~/fr_ws/fr5_infer/docs/field_reports/<YYYY-MM-DD>_pi05_005000_v0.1.2.md`에 작성한다.
    - 요약: 그리퍼 수정 판정, 조건별 성공률과 jerking 평균, 권장 조건
-   - 환경: 이미지 digest, `git describe --tags`
-   - 바꾼 config 값(3-1의 2, 3-3, 3-4 ~ 3-6)
+   - 환경: 이미지 digest, `git describe --tags`, 현장 fr5_teleop 저장소 버전
+   - 바꾼 config 값(3-1의 3, 3-4 ~ 3-6)
    - 3-2 그리퍼 점검 출력 전체와 작업자 답변
-   - 3-3 지연 비교
    - 3-4 ~ 3-6 기록 표, 조건별로 묶은 요약(성공 n/6, jerking 평균, 튐 p50 평균, cmd−tcp max)
    - 실패·보류 항목: 증상, 재현 방법, 로그 원문
    - 개발 PC 후속 작업 제안
