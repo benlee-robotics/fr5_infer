@@ -14,9 +14,10 @@
   마운트한다. 현장 fr5_teleop 저장소(v0.4.2)도 3-1에서 v0.4.3으로 올린다. 0.4.2로 텔레옵을 띄우면
   텔레옵에서도 그리퍼 동작마다 `gripper_timeout`이 나기 때문이다.
 - **배포 방식:**
-  - 저장소: https://github.com/benlee-robotics/fr5_infer, 태그 `v0.1.2`(`main`).
+  - 저장소: https://github.com/benlee-robotics/fr5_infer. `main` = 태그 `v0.1.2` + 이 지시서에
+    digest를 채운 커밋 하나. 코드는 v0.1.2와 같다.
   - Docker 이미지: `ghcr.io/benlee-robotics/fr5_infer:0.1.2`
-    (digest는 3-1에서 기록, public)
+    (`sha256:31b9065a1cb6d3a1b608d90cadc21ce5922792c4c36fb2e44ddde37e7ebbef87`, public)
   - 현장 스크립트(`scripts/gripper_check.py`, `scripts/analyze_run.py`)는 저장소 것을 쓰도록
     실행할 때 `scripts/`를 마운트한다(2장).
 - **현장 PC:** 2026-10-29 검증과 같다. RTX 4090, 드라이버 595.99.02, nvidia-container-toolkit
@@ -181,13 +182,13 @@ curl -s -XPOST 127.0.0.1:8080/api/reset                     # fault 리셋
    # v0.1.1 점검 보고서는 이제 저장소에 들어 있다. 미추적 파일이 checkout을 막으므로 옮겨 둔다.
    mv docs/field_reports/2026-10-29_pi05_005000_v0.1.1.md ~/2026-10-29_pi05_005000_v0.1.1.local.md
    git fetch --tags origin && git checkout main && git pull --ff-only
-   git describe --tags                            # v0.1.2
+   git describe --tags                            # v0.1.2-1-g...
    echo "INFER_TAG=0.1.2" > .env
    docker compose pull
    docker image inspect ghcr.io/benlee-robotics/fr5_infer:0.1.2 -f '{{index .RepoDigests 0}}'
    ```
 
-   digest를 기록한다. `diff ~/2026-10-29_pi05_005000_v0.1.1.local.md
+   digest가 0장의 값과 같은지 기록한다. `diff ~/2026-10-29_pi05_005000_v0.1.1.local.md
    docs/field_reports/2026-10-29_pi05_005000_v0.1.1.md`가 비어 있는지 확인한다. 차이가 있으면
    작업자에게 알리고 로컬 파일을 보관한다.
 2. 현장 fr5_teleop 저장소를 v0.4.3으로 올린다. 현장 `config.yaml` 수정은 유지한다
