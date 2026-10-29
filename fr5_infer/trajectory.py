@@ -133,3 +133,51 @@ class GripperSchmitt:
             if self.closed and value < self.open_threshold:
                 return i
         return None
+
+
+@dataclass
+class TemporalEnsemble:
+    """ACT-style temporal ensembling over time-stamped, overlapping chunks.
+
+    The i-th prediction for a time (0 = oldest) weighs exp(-decay * i), as in
+    ACT. Weight sums and prediction counts are kept per point, so only the
+    last ensembled chunk is stored. Earlier points come from interpolating it
+    at the new chunk's times, since consecutive chunks are not on one grid.
+    """
+
+    decay: float = 0.01
+    trajectory: Trajectory | None = None
+    gripper: np.ndarray | None = None
+    weight: np.ndarray | None = None
+    count: np.ndarray | None = None
+
+    def reset(self) -> None:
+        self.trajectory = self.gripper = self.weight = self.count = None
+
+    def add(self, new: Trajectory, gripper: np.ndarray) -> tuple[Trajectory, np.ndarray]:
+        position = new.position_mm.copy()
+        quat = new.quat_xyzw.copy()
+        merged_gripper = np.asarray(gripper, dtype=np.float64).copy()
+        weight = np.ones(len(new))
+        count = np.ones(len(new))
+        old = self.trajectory
+        if old is not None and len(old) and len(new):
+            assert self.gripper is not None and self.weight is not None and self.count is not None
+            t_old = old.t_ns.astype(np.float64)
+            for i, t in enumerate(new.t_ns):
+                if t < old.start_ns or t > old.end_ns:
+                    continue
+                old_weight = float(np.interp(t, t_old, self.weight))
+                old_count = float(np.interp(t, t_old, self.count))
+                new_weight = math.exp(-self.decay * old_count)
+                alpha = new_weight / (old_weight + new_weight)
+                old_position, old_quat = old.sample(int(t))
+                position[i] = np.asarray(old_position) + alpha * (position[i] - old_position)
+                quat[i] = quat_slerp(old_quat, tuple(float(v) for v in quat[i]), alpha)
+                old_gripper = float(np.interp(t, t_old, self.gripper))
+                merged_gripper[i] = old_gripper + alpha * (merged_gripper[i] - old_gripper)
+                weight[i] = old_weight + new_weight
+                count[i] = old_count + 1.0
+        merged = Trajectory(new.t_ns.copy(), position, quat)
+        self.trajectory, self.gripper, self.weight, self.count = merged, merged_gripper, weight, count
+        return merged, merged_gripper.copy()

@@ -32,5 +32,12 @@ class PolicyBackend(Protocol):
     def reset(self) -> None:
         """Called at every episode start."""
 
-    def predict(self, observation: Observation) -> np.ndarray:
-        """(T, 10) action chunk in physical units (dataset action space)."""
+    def break_continuation(self) -> None:
+        """The next chunk does not continue the previous one (gripper action)."""
+
+    def predict(self, observation: Observation, inference_delay_s: float = 0.0) -> np.ndarray:
+        """(T, 10) action chunk in physical units (dataset action space).
+
+        ``inference_delay_s``: how long after the observation the chunk can
+        start to be executed (RTC keeps those steps on the previous chunk).
+        """

@@ -20,6 +20,7 @@ from teleop.config import CameraConfig, TeleopConfig
 
 MODES = ("fake", "shadow", "real")
 BACKENDS = ("pi05", "replay")
+RTC_SCHEDULES = ("ZEROS", "ONES", "LINEAR", "EXP")
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,20 @@ class ReplayConfig:
     # LeRobot dataset root; its recorded actions stand in for a policy.
     dataset: Path | None = None
     episode: int = 0
+
+
+@dataclass(frozen=True)
+class RtcConfig:
+    # Real-Time Chunking, lerobot's inference-time ("guided") mode, so any
+    # pi05 checkpoint works: each new chunk is steered towards the part of the
+    # previous chunk that is still to be executed, which keeps consecutive
+    # chunks on one path instead of independent samples.
+    enabled: bool = False
+    # Previous-chunk steps the guidance covers. Steps that run during the
+    # inference weigh 1, the weight then falls to 0 at this step.
+    execution_horizon: int = 10
+    max_guidance_weight: float = 10.0
+    schedule: str = "LINEAR"  # ZEROS | ONES | LINEAR | EXP
 
 
 @dataclass(frozen=True)
@@ -38,6 +53,7 @@ class PolicyConfig:
     task: str = "pick up the cube and place it in the box"
     device: str = "cuda"
     replay: ReplayConfig = field(default_factory=ReplayConfig)
+    rtc: RtcConfig = field(default_factory=RtcConfig)
 
 
 @dataclass(frozen=True)
@@ -51,6 +67,11 @@ class ExecutionConfig:
     min_lead_s: float = 0.02
     # Overlap with the previous trajectory that is cross-faded.
     blend_s: float = 0.15
+    # ACT-style temporal ensembling: every point is the weighted mean of all
+    # chunks predicted for that time, the i-th (0 = oldest) weighing
+    # exp(-ensemble_decay * i). The gripper output is averaged too.
+    ensemble: bool = False
+    ensemble_decay: float = 0.01
     # Sample the trajectory this far ahead of now (servo latency).
     lookahead_s: float = 0.0
     # Stop the servo this long after the last trajectory point.
@@ -139,6 +160,13 @@ class InferConfig:
             raise ValueError("policy.checkpoint is required for the pi05 backend")
         if self.policy.backend == "replay" and self.policy.replay.dataset is None:
             raise ValueError("policy.replay.dataset is required for the replay backend")
+        rtc = self.policy.rtc
+        if rtc.enabled and self.policy.backend != "pi05":
+            raise ValueError("policy.rtc needs the pi05 backend")
+        if rtc.execution_horizon < 1 or not rtc.max_guidance_weight > 0:
+            raise ValueError("policy.rtc.execution_horizon >= 1 and max_guidance_weight > 0")
+        if rtc.schedule not in RTC_SCHEDULES:
+            raise ValueError(f"policy.rtc.schedule must be one of {', '.join(RTC_SCHEDULES)}")
         if self.policy.conversion is None or not self.policy.conversion.is_file():
             raise ValueError(f"policy.conversion not found: {self.policy.conversion}")
         if self.teleop.arms:
@@ -197,6 +225,7 @@ class InferConfig:
 
         policy_raw = dict(raw.get("policy") or {})
         replay = _build(ReplayConfig, policy_raw.pop("replay", None), "policy.replay")
+        rtc = _build(RtcConfig, policy_raw.pop("rtc", None), "policy.rtc")
         if replay.dataset is not None:
             replay = dataclasses.replace(replay, dataset=_resolve(base, replay.dataset))
         policy = _build(PolicyConfig, policy_raw, "policy")
@@ -205,6 +234,7 @@ class InferConfig:
             checkpoint=_resolve(base, policy.checkpoint),
             conversion=_resolve(base, policy.conversion),
             replay=replay,
+            rtc=rtc,
         )
         log_config = _build(LogConfig, raw.get("log"), "log")
         config = cls(

@@ -13,7 +13,7 @@ mode: fake
 policy:
   backend: pi05            # pi05 | replay (recorded dataset actions, no model)
   # Step folder copied from the training PC: checkpoints/<run>/<step>/pretrained_model
-  checkpoint: checkpoints/fr5_pick_cube_pi05_expert/002500/pretrained_model
+  checkpoint: checkpoints/fr5_pick_cube_pi05_expert/005000/pretrained_model
   # Conversion record of the training dataset: fps, rotation, cameras,
   # camera latency. Checked against the checkpoint at startup.
   conversion: ../fr5_teleop/datasets/fr5_pick_cube_20261027/fr5_conversion.json
@@ -22,12 +22,22 @@ policy:
   replay:
     dataset: ../fr5_teleop/datasets/fr5_pick_cube_20261027
     episode: 0
+  # Real-Time Chunking (pi05, inference-time guidance, no retraining): each
+  # chunk is steered to continue the unexecuted part of the previous one.
+  # Costs extra latency (one backward pass per denoising step).
+  rtc:
+    enabled: false
+    execution_horizon: 10  # previous-chunk steps guided (weight 1 -> 0)
+    max_guidance_weight: 10.0
+    schedule: LINEAR       # ZEROS | ONES | LINEAR | EXP
 
 execution:
   replan_steps: 20         # re-infer after 20 chunk steps (0.67 s at 30 fps)
   refill_margin_s: 0.15    # ...or when remaining < latency EMA + margin
   min_lead_s: 0.02
   blend_s: 0.15
+  ensemble: false          # ACT-style temporal ensembling of overlapping chunks
+  ensemble_decay: 0.01     # i-th prediction (0 = oldest) weighs exp(-decay * i)
   lookahead_s: 0.0
   trajectory_grace_s: 0.10
   max_points: 64

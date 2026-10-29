@@ -5,11 +5,15 @@
    ``replan_steps`` chunk steps have passed since the last observation.
 2. Observe: the robot state slot (its measurement time is t_obs) and the
    latest frame of each camera; stale inputs mean no inference.
-3. Infer, decode, stamp row k with t_obs + k/fps, drop past points.
-4. Cross-fade with the previous trajectory, run the gripper hysteresis and,
-   if it flips, cut the trajectory at that point and attach the switch.
+3. Infer (with RTC, continuing the previous chunk), decode, stamp row k
+   with t_obs + k/fps, drop past points.
+4. Optionally ensemble with the earlier chunks (ACT), cross-fade with the
+   previous trajectory, run the gripper hysteresis and, if it flips, cut the
+   trajectory at that point and attach the switch.
 5. Write the mailbox. No new inference until a written gripper switch has
    completed; the robot then waits for an observation taken after it.
+   The robot stood still meanwhile, so neither RTC nor the ensemble carries
+   the earlier chunks over a gripper action.
 """
 
 from __future__ import annotations
@@ -27,7 +31,13 @@ from fr5_infer.config import InferConfig
 from fr5_infer.conversion import ConversionInfo, decode_chunk, encode_state
 from fr5_infer.rollout_log import EpisodeLog
 from fr5_infer.shm import LatestFrameSlot, RobotState, RobotStateSlot, TrajectoryMailbox
-from fr5_infer.trajectory import GripperSchmitt, Trajectory, align_chunk, blend
+from fr5_infer.trajectory import (
+    GripperSchmitt,
+    TemporalEnsemble,
+    Trajectory,
+    align_chunk,
+    blend,
+)
 
 
 log = logging.getLogger(__name__)
@@ -64,6 +74,9 @@ class PolicyLoop(threading.Thread):
         gripper = config.gripper
         self.schmitt = GripperSchmitt(
             gripper.close_threshold, gripper.open_threshold, gripper.min_dwell_s
+        )
+        self.ensemble = (
+            TemporalEnsemble(config.execution.ensemble_decay) if config.execution.ensemble else None
         )
         self.episode = 0
         self.episode_log: EpisodeLog | None = None
@@ -132,7 +145,7 @@ class PolicyLoop(threading.Thread):
                 self.pending_switch = None
                 self.schmitt.reset(target, robot.gripper_done_ns)
                 # The cut trajectory ended at the switch; start over after it.
-                self.trajectory = None
+                self._forget_chunks()
             else:
                 self._set_status(state="waiting_for_gripper")
                 return False
@@ -187,8 +200,11 @@ class PolicyLoop(threading.Thread):
 
     def _infer(self, robot: RobotState, observation: Observation) -> None:
         self._set_status(state="inferring")
+        execution = self.config.execution
+        # Chunk steps that will be in the past once this inference is done.
+        delay_s = (self.latency_ema_s or 0.0) + execution.min_lead_s
         started_ns = time.monotonic_ns()
-        chunk = np.asarray(self.backend.predict(observation), dtype=np.float32)
+        chunk = np.asarray(self.backend.predict(observation, delay_s), dtype=np.float32)
         done_ns = time.monotonic_ns()
         latency_s = (done_ns - started_ns) / 1e9
         self.latency_ema_s = (
@@ -198,7 +214,6 @@ class PolicyLoop(threading.Thread):
         )
         self.last_obs_ns = observation.t_obs_ns
 
-        execution = self.config.execution
         decoded = decode_chunk(chunk)
         aligned = align_chunk(decoded, observation.t_obs_ns, self.conversion.fps)
         keep = aligned.t_ns >= done_ns + int(execution.min_lead_s * 1e9)
@@ -210,6 +225,8 @@ class PolicyLoop(threading.Thread):
             self._log_inference(observation, chunk, latency_s, done_ns, dropped, 0, -1, -1)
             return
 
+        if self.ensemble is not None:
+            trajectory, gripper_raw = self.ensemble.add(trajectory, gripper_raw)
         if robot.state == "RUNNING":
             trajectory = blend(self.trajectory, trajectory, execution.blend_s)
         switch = self.schmitt.first_switch(trajectory.t_ns, gripper_raw)
@@ -238,11 +255,17 @@ class PolicyLoop(threading.Thread):
                 gripper_raw_first=round(float(gripper_raw[0]), 3),
             )
 
+    def _forget_chunks(self) -> None:
+        self.trajectory = None
+        self.backend.break_continuation()
+        if self.ensemble is not None:
+            self.ensemble.reset()
+
     # ── episode bookkeeping ──────────────────────────────────────────
 
     def _begin_episode(self, robot: RobotState, now_ns: int) -> None:
         self.episode = robot.episode
-        self.trajectory = None
+        self._forget_chunks()
         self.last_obs_ns = 0
         self.pending_switch = None
         self.schmitt.reset(robot.gripper_closed, 0)
@@ -267,7 +290,7 @@ class PolicyLoop(threading.Thread):
         if self.episode:
             self._set_status(last_end_reason=reason)
         self.episode = 0
-        self.trajectory = None
+        self._forget_chunks()
 
     def _log_inference(
         self,
@@ -282,6 +305,7 @@ class PolicyLoop(threading.Thread):
     ) -> None:
         if self.episode_log is None:
             return
+        rtc = getattr(self.backend, "last_rtc", None) or {}
         self.episode_log.add_inference(
             {
                 "t_obs_ns": observation.t_obs_ns,
@@ -293,6 +317,9 @@ class PolicyLoop(threading.Thread):
                 "sent_points": sent,
                 "gripper_change_ns": change_ns,
                 "mailbox_seq": seq,
+                # RTC prefix length and frozen steps (0 = chunk not guided).
+                "rtc_prefix_steps": rtc.get("prefix_steps", 0),
+                "rtc_delay_steps": rtc.get("delay_steps", 0),
             },
             observation.images,
         )

@@ -96,6 +96,46 @@ python scripts/eval_offline.py \
 - 50샘플 중 20개가 첫 스텝에서 20 mm를 넘는다. 기본 `max_start_offset_mm: 20`에서는
   시작이 자주 거부될 수 있다.
 
+## 청크 이음매: RTC와 시간 앙상블
+
+기본(v0.1.0과 같음)으로는 청크마다 새 노이즈에서 샘플링한다. 그래서 0.67 s마다 경로가 바뀌고,
+그 차이를 `blend_s` 0.15 s 안에서 흡수한다. 두 기법을 켤 수 있다.
+
+- **RTC** (`policy.rtc.enabled`, pi05 전용): lerobot 0.6의 추론 시점 guided RTC다. 재학습이 필요
+  없다. 이전 청크에서 아직 실행하지 않은 부분(모델 공간)을 넘긴다. 추론 동안 실행될 스텝
+  (`지연 EMA + min_lead_s`)은 이전 청크에 고정되고, `execution_horizon` 스텝까지 가중치가 1에서 0으로
+  줄어든다. 그리퍼 동작 뒤와 에피소드 시작에는 이어 붙이지 않는다.
+- **시간 앙상블** (`execution.ensemble`): ACT 방식이다. 시각마다 그 시각을 예측한 모든 청크의 가중
+  평균을 낸다. i번째 예측(0 = 가장 오래된 것)의 가중치는 `exp(-ensemble_decay·i)`다. 그리퍼 출력도
+  평균한다.
+
+녹화 에피소드를 로봇처럼 순차 재생해 이음매를 비교한다.
+
+```bash
+python scripts/eval_chunk_continuity.py \
+    --checkpoint checkpoints/fr5_pick_cube_pi05_expert/002500/pretrained_model \
+    --dataset ../fr5_teleop/datasets/fr5_pick_cube_20261027 --episodes 0 40 80
+```
+
+002500, 에피소드 0/40/80, replan 20, 지연 5스텝, RTX 5080 결과다. "튐"은 청크를 바꾸는 시점에
+이전 궤적과 새 궤적 사이의 거리이고, "오차"는 실행 구간의 녹화 action 대비 위치 오차다.
+
+| 방식 | 튐 p50 / p90 / max (mm) | 회전 튐 max (°) | 오차 (mm) | 지연 p50 (ms) |
+|---|---|---|---|---|
+| 독립 샘플 (기본) | 35.2 / 66.4 / 155.8 | 11.1 | 28.4 | 126 |
+| 앙상블 | 11.1 / 24.5 / 40.7 | 5.5 | 32.2 | 126 |
+| **RTC (horizon 10)** | **3.4 / 7.0 / 12.9** | **0.95** | **26.6** | 155 |
+| RTC (horizon 20) | 1.6 / 3.2 / 3.9 | 0.36 | 34.6 | 152 |
+| RTC + 앙상블 | 6.3 / 16.4 / 31.0 | 1.9 | 32.0 | 155 |
+
+- 독립 샘플의 튐 p50 35 mm를 0.15 s에 흡수하려면 약 230 mm/s가 필요하다. 그래서 속도 제한에 걸린다.
+  2026-10-29 현장에서 100 mm/s일 때 생긴 jerking과 맞는 값이다.
+- RTC(horizon 10)는 튐을 1/10로 줄이면서 오차는 늘리지 않는다. horizon 20은 더 매끄럽지만 이전 계획을
+  오래 따라가 오차가 커진다.
+- 앙상블은 튐을 줄이지만 반응이 느려져 오차가 늘고, RTC와 같이 쓰면 오히려 나빠진다.
+- RTC는 denoising 스텝마다 역전파를 한 번 더 해서 지연이 약 30 ms 늘어난다. GPU 메모리는 거의 같다
+  (9.76 GB).
+
 ## Docker (현장 배포)
 
 현장 PC에서는 conda env 대신 이미지로 실행한다. 이미지 안에는 다음이 들어 있다.
@@ -261,6 +301,8 @@ python -m fr5_infer --mode real   --backend pi05   --confirm-hardware
 | `execution.replan_steps` | 마지막 관측 이후 이만큼 스텝이 지나면 다시 추론한다(가이드 권장 15~25) |
 | `execution.refill_margin_s` | 남은 궤적이 `지연 EMA + 이 값`보다 짧아도 다시 추론한다 |
 | `execution.blend_s` | 새 청크의 앞부분을 이전 궤적과 코사인 가중으로 섞는 구간 |
+| `execution.ensemble`, `ensemble_decay` | ACT식 시간 앙상블과 가중치 감쇠 (위 "청크 이음매") |
+| `policy.rtc.*` | RTC 사용 여부, `execution_horizon`, `max_guidance_weight`, `schedule` (위 "청크 이음매") |
 | `execution.lookahead_s` | 서보 지연 보상. 궤적을 이만큼 앞에서 샘플링한다 |
 | `safety.max_orientation_deviation_deg` | 홈 자세 기준 절대 자세 범위 |
 | `safety.max_episode_s` | 에피소드 최대 시간 |
@@ -271,7 +313,7 @@ python -m fr5_infer --mode real   --backend pi05   --confirm-hardware
 | 파일 | 내용 |
 |---|---|
 | `meta.json` | 모드, 백엔드·체크포인트, 변환 기록, 지시문, 설정, 종료 사유, 추론 지연 통계 |
-| `inferences.npz` | 추론마다 관측 시각, 지연, `observation.state`, 원본 청크(T×10), 보낸/버린 점 수, 그리퍼 전환 시각 |
+| `inferences.npz` | 추론마다 관측 시각, 지연, `observation.state`, 원본 청크(T×10), 보낸/버린 점 수, 그리퍼 전환 시각, RTC prefix 길이와 고정 스텝 수(`rtc_prefix_steps`, `rtc_delay_steps`, 0이면 guidance 없음) |
 | `ticks.npy` | 8 ms tick마다 측정 TCP, 그리퍼, 보간 목표(`desired`), 제한 후 명령(`cmd`). dtype은 `robot_process.TICK_DTYPE` |
 | `robot_end_reason.txt` | 로봇 쪽 종료 사유 |
 | `images/` | `log.save_images: true`일 때 추론 입력 프레임 |
@@ -289,6 +331,9 @@ python -m pytest -q
 - 궤적
   - 시각 정렬, 블렌딩 연속성
   - 히스테리시스·dwell
+  - 시간 앙상블 평균·감쇠·격자 밖 보간·초기화
+- RTC
+  - 설정 검증, prefix 시작 위치·지연 스텝, 겹침 없음·연결 끊김
 - 로봇 루프 (FakeRobotClient)
   - 시작 거리 거부, 시작 전에 쓰인 궤적 무시
   - 궤적 소진 시 정지, 속도 제한

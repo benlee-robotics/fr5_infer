@@ -45,7 +45,7 @@ def make_backend(config: InferConfig, cameras: tuple[str, ...], fps: int) -> Pol
     from fr5_infer.backends.pi05 import Pi05Backend
 
     assert policy.checkpoint is not None
-    return Pi05Backend(policy.checkpoint, cameras, policy.device)
+    return Pi05Backend(policy.checkpoint, cameras, policy.device, fps, policy.rtc)
 
 
 class InferApp:

@@ -58,7 +58,10 @@ class ReplayBackend:
     def reset(self) -> None:
         pass
 
-    def predict(self, observation: Observation) -> np.ndarray:
+    def break_continuation(self) -> None:
+        pass
+
+    def predict(self, observation: Observation, inference_delay_s: float = 0.0) -> np.ndarray:
         time.sleep(self.latency_s)
         start = int(round(observation.episode_time_s * self.fps))
         start = min(max(start, 0), len(self.actions) - 1)
